@@ -15,9 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""WiFi Rate Control Statistics Primitive."""
+
+"""
+Made By: Sri Harsh Amur
+Contact: sriharshamur@gmail.com
+"""
+
+
+"""QoS Slicing Application."""
 
 from datetime import datetime
+from tracemalloc import Statistic
 from typing import Protocol
 
 from construct import Struct, Int8ub, Int16ub, Int32ub, Bytes, Array
@@ -32,15 +40,20 @@ from empower_core.app import EVERY
 
 from empower.managers.ranmanager.lvapp.wifislice import WiFiSlice
 
-# from trafficrule import TrafficRule
+
+"""
+Start from the loop function. Loop function calls sends teh DSCP Stat request periodically, After that the response is received by the handle_response function. 
+Handle_response function calls the make_traffic_rule function which creates the slice and the traffic rules. 
+"""
 
 
+# Every packet needs a header so that the WTP can identify which packet this is and what its functionality is. 
+# These headers are also defined in the WTP and need to match for the whole system to work. 
 PT_WIFI_DSCP_STATS_REQUEST = 0x8D
 PT_WIFI_DSCP_STATS_RESPONSE = 0x8E
 PT_WIFI_TRAFFIC_RULES_RESPONSE = 0x8F  # This is techinically not a response
 
-# Change these values, all the requests need to be filled and the resposnes are the tings we except
-# SSID is required since the traffic rules and the slices should be created for on wifi network.
+# This is the request sent from the controller to the WTPs for DSCP stats
 WIFI_DSCP_STATS_REQUEST = Struct(
     "version" / Int8ub,
     "type" / Int8ub,
@@ -52,6 +65,7 @@ WIFI_DSCP_STATS_REQUEST = Struct(
 )
 WIFI_DSCP_STATS_REQUEST.name = "wifi_dscp_stats_request"
 
+# DSCP Stat contains the packet feature 
 DSCP_STATS_ENTRY = Struct(
     "src_ip" / Array(4, Int8ub),
     "dst_ip" / Array(4, Int8ub),
@@ -62,6 +76,7 @@ DSCP_STATS_ENTRY = Struct(
 )
 DSCP_STATS_ENTRY.name = "dscp_stats_entry"
 
+# DSCP Stat contains the dscp code with the total count and average packet size
 DSCP_MAP_ENTRY = Struct(
     "code" / Int8ub,
     "count" / Int32ub,
@@ -69,6 +84,7 @@ DSCP_MAP_ENTRY = Struct(
 )
 DSCP_MAP_ENTRY.name = "dscp_map_entry"
 
+# This is the DSCP Stat Response which contains the Packet feature details and also the details for each DSCP 
 WIFI_DSCP_STATS_RESPONSE = Struct(
     "version" / Int8ub,
     "type" / Int8ub,
@@ -84,7 +100,7 @@ WIFI_DSCP_STATS_RESPONSE = Struct(
 )
 WIFI_DSCP_STATS_RESPONSE.name = "wifi_dscp_stats_response"
 
-# The same as the Wifi Stats Entry
+# Traffic Rule Match Object in form of a packet
 TRAFFIC_RULE_MATCH = Struct(
     "src_ip" / Array(4, Int8ub),
     "dst_ip" / Array(4, Int8ub),
@@ -95,12 +111,7 @@ TRAFFIC_RULE_MATCH = Struct(
 )
 TRAFFIC_RULE_MATCH.name = "traffic_rule_match"
 
-# TRAFFIC_RULE_ENTRY = Struct(
-#     "dscp" / Int8ub,
-#     "match" / TRAFFIC_RULE_MATCH
-# )
-# TRAFFIC_RULE_ENTRY.name = "traffic_rule_entry"
-
+# This is the traffic rule packet sent to each WTP. Each Traffic Rule packet can only contain one rule. The main detail is the dscp and the traffic rule  match object
 WIFI_TRAFFIC_RULE_RESPONSE = Struct(
     "version" / Int8ub,
     "type" / Int8ub,
@@ -108,42 +119,30 @@ WIFI_TRAFFIC_RULE_RESPONSE = Struct(
     "seq" / Int32ub,
     "xid" / Int32ub,
     "device" / Bytes(6),
-    # "ssid" / Bytes(WIFI_NWID_MAXSIZE + 1),
-    # "nb_traffic_rules" / Int16ub,
-    # "traffic_rules" /
-    # Array(lambda ctx: ctx.nb_traffic_rules, TRAFFIC_RULE_ENTRY)
     "dscp" / Int8ub,
     "match" / TRAFFIC_RULE_MATCH
 )
 WIFI_TRAFFIC_RULE_RESPONSE.name = "wifi_traffic_rules_response"
 
 
-# SLICE_COUNT_THRESHOLD = 3
-ACTIVATION_THRESHOLD = 200  # nr of pkts after which slice division will start.
-INDIVIDUAL_SLICE = 600
-ANY_IP_ADDRESS = [0, 0, 0, 0]
-ANY_PORT = 0
-ANY_PROTOCOL = 255
+ACTIVATION_THRESHOLD = 200  # nr of pkts after which flow will be moved from BE Slice to a Group Slice
+INDIVIDUAL_SLICE = 600 # nr of pakts after which flow will be moved from Group Slice to its own DSCP Slice
+ANY_IP_ADDRESS = [0, 0, 0, 0] # Use this IP Address if you want all packets to match
+ANY_PORT = 0 # All packets will match with this port number
+ANY_PROTOCOL = 255 # You get the idea.
 ANY_DSCP = 255
 
 
 class DSCPStats(EWiFiApp):
     """
-    WiFi DSCP Statistics App.
+    QoS Slicing App.
 
-    This app collects the dscp statistics to make traffic rules and create slices.
+    This app collects the dscp statistics to make traffic rules and dynamically create slices.
 
     Parameters:
         every: the loop period in ms (optional, default 2000ms)
 
-    Example:
-        POST /api/v1/projects/52313ecb-9d00-4b7d-b873-b55d3d9ada26/apps
-        {
-            "name": "empower.apps.wifidscpstats.wifidscpstats",
-            "params": {
-                "every": 2000
-            }
-        }
+    }
     """
 
     def __init__(self, context, service_id, every=EVERY):
@@ -164,7 +163,6 @@ class DSCPStats(EWiFiApp):
         self.stats = {}
         self.traffic_rules = {}
         self.wtps_count = 0
-        # self.traffic_rules.__hash__
 
     def __eq__(self, other):
         if isinstance(other, DSCPStats):
@@ -175,15 +173,12 @@ class DSCPStats(EWiFiApp):
         """Return JSON-serializable representation of the object."""
 
         out = super().to_dict()
-
-        # out['slice_id'] = self.slice_id
         out['stats'] = self.stats
 
         return out
 
     def set_slices(self, dscp, quantum):
         """Sets Slices in the WTPs"""
-        # print(f"Making DSCP {dscp} with quantum {quantum}")
         properties = {
             "quantum": quantum
         }
@@ -195,7 +190,6 @@ class DSCPStats(EWiFiApp):
 
     def send_traffic_rules(self, traffic_rules):
         """Send out Traffic Rules to the WTPs"""
-        print("sending traffic rules")
         for wtp in self.wtps.values():
 
             if not wtp.connection:
@@ -248,12 +242,6 @@ class DSCPStats(EWiFiApp):
                     dscpMap[code] += stat["dscp_map"][code]
         print("DSCPMap: ", dscpMap)
 
-        # group the similar dscps together
-        # each slice can only handle 500 packets at once
-        # assume that if the number of packets in the network of a DSCP is more than 75% then
-        # the packets are only going to increase and fill up the slice
-        # if the number of packets in a slice is > 375 then split the slice.
-        # otherwise group the packets together and make that slice (if it exists then doens't matter)
         traffic_rules = []
         slices = []
         for dscp in dscpMap:
@@ -267,6 +255,7 @@ class DSCPStats(EWiFiApp):
                     # Change dscp into group dscp
                     dscp_slice = self.get_dscp_group(dscp)
                     tos = self.get_tos(dscp_slice)
+                
                 match = {
                     "src_ip": ANY_IP_ADDRESS,
                     "dst_ip": ANY_IP_ADDRESS,
@@ -292,32 +281,37 @@ class DSCPStats(EWiFiApp):
         if len(traffic_rules) > 0:
             self.send_traffic_rules(traffic_rules)
         print()
-        
-
 
     def make_slices(self, slices):
-        total_quantum = 10000
+        """Creates New Slices and modifies the existing slices' quantum value"""
+        total_quantum = 10000 # Assume total quantum is 10000 
         total_slice_share = 0
-        wifi_slices = self.context.wifi_slices.keys()
+        wifi_slices = self.context.wifi_slices.keys() # Get all the existing slices
         wifi_slices = [int(i) for i in wifi_slices]
-        slices.extend(wifi_slices)
-        slices = set(slices)
+        slices.extend(wifi_slices) # add that to the list of slices that need to be created
+        slices = set(slices) # make it a set so that no slice is repeated
+
         for dscp in slices:
             unit = self.get_dscp_unit(dscp)
             total_slice_share += unit
+        
         unit_quantum = total_quantum/total_slice_share
         for dscp_slice in slices:
             unit = self.get_dscp_unit(dscp_slice)
-            quantum = unit * unit_quantum 
+            quantum = unit * unit_quantum
+
+            # If slice already exists
             if str(dscp_slice) in self.context.wifi_slices:
                 slice = self.context.wifi_slices[str(dscp_slice)]
+                # If slice quantum is different than the what was just calculated
                 if quantum != slice.properties['quantum']:
-                    self.set_slices(dscp_slice, quantum)  # the slice for the dscp
+                    self.set_slices(dscp_slice, quantum)
+            # New Slice 
             else:
                 self.set_slices(dscp_slice, quantum)  # the slice for the dscp
 
-    
     def get_dscp_unit(self, dscp):
+        """Essentially the level of priority a slice should have over others. Decides the quantum value"""
         group_dscp = self.get_dscp_group(dscp)
         unit_map = {
             8: 0.5,
@@ -329,7 +323,6 @@ class DSCPStats(EWiFiApp):
         }
 
         return unit_map[group_dscp]
-
 
     def loop(self):
         """Send out requests"""
@@ -364,6 +357,8 @@ class DSCPStats(EWiFiApp):
         print("entries received: ", response.nb_entries)
 
         packets = []
+
+        # Packet statistics
         for entry in response.stats:
 
             # print("entry", entry)
@@ -378,34 +373,43 @@ class DSCPStats(EWiFiApp):
 
             packets.append(packet)
 
+        # DSCP Statistics
         dscpMap = {}
-
+        dscpPoints = []
         for dscp_pair in response.dscp_map:
             dscpMap[dscp_pair.code] = [
                 dscp_pair.count, dscp_pair.ave_packet_size]
 
-        # print("packets: ", packets)
-        # print("dscpMap: ", dscpMap)
+            # For every dscp, note down the amount and average packet size
+            tags = dict(self.params)
 
+            sample = {
+                "measurement": self.name,
+                "tags": tags,
+                "timestamp": timestamp,
+                "fields": {
+                    f"{dscp_pair.code}_count": dscp_pair.count,
+                    f"{dscp_pair.code}_avg_packet_size": dscp_pair.avg_packet_size,
+                }
+            }
+            dscpPoints.append(sample)
+        
+        #  These values might also be useful for database points
+        # "total_packets": response.nb_entries,
+        # "total_dscp_counts": response.dscp_map_count,
 
-        # print("dscpMapCount: ", response.dscp_map_count)
-        # print("dscpStatCount: ", response.nb_entries)
-        # print("packets: ", packets)
-        # print("sdcp_map: ", dscpMap)
-        # print("ssid: ", response.ssid)
-        # print("device: ", response.device)
+       # save to db
+        self.write_points(dscpPoints)
+
         packetStats = {
             "dscp_map_count": response.dscp_map_count,
             "dscp_stats_count": response.nb_entries,
             "packets": packets,
             "dscp_map": dscpMap,
-            # "ssid": response.ssid,
-            # "wtp": response.device
         }
+
         self.stats[wtp] = packetStats
         self.make_traffic_rules()
-        # save to db
-        # self.write_points(points)
 
         # handle callbacks
         self.handle_callbacks()
