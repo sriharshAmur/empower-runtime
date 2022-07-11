@@ -51,7 +51,7 @@ class Rates(EWiFiApp):
         """Periodic loop."""
 
         for lvap in self.lvaps.values():
-            lvap.txp.ht_mcs = [0,1,2,3]
+            lvap.txp.ht_mcs = [7]
 
 def launch(context, service_id, every=EVERY):
     """ Initialize the module. """
