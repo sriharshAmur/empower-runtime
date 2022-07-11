@@ -119,8 +119,8 @@ WIFI_TRAFFIC_RULE_RESPONSE.name = "wifi_traffic_rules_response"
 
 
 # SLICE_COUNT_THRESHOLD = 3
-ACTIVATION_THRESHOLD = 50  # nr of pkts after which slice division will start.
-INDIVIDUAL_SLICE = 200
+ACTIVATION_THRESHOLD = 200  # nr of pkts after which slice division will start.
+INDIVIDUAL_SLICE = 600
 ANY_IP_ADDRESS = [0, 0, 0, 0]
 ANY_PORT = 0
 ANY_PROTOCOL = 255
@@ -323,9 +323,9 @@ class DSCPStats(EWiFiApp):
             8: 0.5,
             0: 1,
             24: 1.5,
-            32: 3,
-            46: 4,
-            48: 6
+            32: 2,
+            46: 3,
+            48: 4
         }
 
         return unit_map[group_dscp]
@@ -418,9 +418,6 @@ class DSCPStats(EWiFiApp):
         dst_ip = hash(match["dst_ip"][0]) + hash(match["dst_ip"][1]) + \
             hash(match["dst_ip"][2]) + hash(match["dst_ip"][3])
         key += src_ip + dst_ip
-        # print("src: ", src_ip)
-        # print("dst: ", dst_ip)
-        # print("key: ", key)
         return key
 
     def get_dscp_group(self, dscp):
