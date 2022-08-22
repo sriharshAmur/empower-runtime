@@ -80,7 +80,7 @@ DSCP_STATS_ENTRY.name = "dscp_stats_entry"
 DSCP_MAP_ENTRY = Struct(
     "code" / Int8ub,
     "count" / Int32ub,
-    "ave_packet_size" / Int32ub
+    "avg_packet_size" / Int32ub
 )
 DSCP_MAP_ENTRY.name = "dscp_map_entry"
 
@@ -241,7 +241,7 @@ class DSCPStats(EWiFiApp):
                 else:
                     dscpMap[code] += stat["dscp_map"][code]
         print("DSCPMap: ", dscpMap)
-
+        # Packet Size in bits * packets per second = Datarate..Actual throughput would be (payload size x packet per sec)
         traffic_rules = []
         slices = []
         for dscp in dscpMap:
@@ -378,7 +378,7 @@ class DSCPStats(EWiFiApp):
         dscpPoints = []
         for dscp_pair in response.dscp_map:
             dscpMap[dscp_pair.code] = [
-                dscp_pair.count, dscp_pair.ave_packet_size]
+                dscp_pair.count, dscp_pair.avg_packet_size]
 
             # For every dscp, note down the amount and average packet size
             tags = dict(self.params)
